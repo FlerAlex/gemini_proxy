@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers on any semantic version tag push (e.g., v0.1.0)
+
+permissions:
+  contents: write # Crucial permission to allow uploading release assets
+
+jobs:
+  build:
+    name: Build Release Binary
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: gemini-proxy-linux-amd64
+            use_shell: bash
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: gemini-proxy-macos-arm64
+            use_shell: bash
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: gemini-proxy-windows-amd64.exe
+            use_shell: pwsh
+
+    runs-on: ${{ matrix.os }}
+    shell: ${{ matrix.use_shell }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Compile Release Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare Binary Artifact (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/gemini_proxy dist/${{ matrix.artifact_name }}
+
+      - name: Prepare Binary Artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir dist
+          copy target\${{ matrix.target }}\release\gemini_proxy.exe dist\${{ matrix.artifact_name }}
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Verify Downloaded Assets
+        run: |
+          echo "--- Assets Prepared for Upload ---"
+          ls -R dist
+
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/gemini-proxy-linux-amd64
+            dist/gemini-proxy-macos-arm64
+            dist/gemini-proxy-windows-amd64.exe
+          draft: false
+          prerelease: false
+          generate_release_notes: true # Auto-generates changelogs from commits
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
