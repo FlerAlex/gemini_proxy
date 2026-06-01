@@ -2,7 +2,6 @@ mod engine;
 mod models;
 
 use axum::{
-    extract::State,
     http::StatusCode,
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -14,12 +13,10 @@ use axum::{
 use futures_util::stream::Stream;
 use std::convert::Infallible;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
-use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
 
-use engine::{collect_prompt, stream_prompt, GeminiEngine};
+use engine::{collect_prompt, stream_prompt};
 use models::{ChatMessage, ChatResponse, OpenAIRequest, ResponseChoice, Usage};
 
 // A custom stream wrapper to convert an mpsc::Receiver into a Stream without extra dependencies.
@@ -47,8 +44,6 @@ async fn main() {
         .with_max_level(tracing::Level::INFO)
         .init();
 
-    let state = Arc::new(Mutex::new(None));
-
     let port = std::env::var("PORT")
         .unwrap_or_else(|_| "8765".to_string())
         .parse::<u16>()
@@ -74,8 +69,7 @@ async fn main() {
         .route("/health", get(health_check))
         .route("/v1/models", get(handle_models))
         .route("/v1/chat/completions", post(handle_chat_completions))
-        .layer(cors)
-        .with_state(state.clone());
+        .layer(cors);
 
     let shutdown_signal = async move {
         tokio::signal::ctrl_c()
@@ -142,12 +136,32 @@ async fn handle_models() -> impl IntoResponse {
 }
 
 async fn handle_chat_completions(
-    State(state): State<Arc<Mutex<Option<GeminiEngine>>>>,
     Json(req): Json<OpenAIRequest>,
 ) -> Response {
+    if let Some(tools) = &req.tools {
+        let is_valid_empty = tools.is_null() || tools.as_array().is_some_and(|arr| arr.is_empty());
+        if !is_valid_empty {
+            return (
+                StatusCode::BAD_REQUEST,
+                "Tool calls are not supported by the stateless gemini-cli proxy execution model.",
+            )
+                .into_response();
+        }
+    }
+
+    if req.temperature.is_some() || req.max_tokens.is_some() {
+        tracing::warn!(
+            "Request contains ignored OpenAI parameters: temperature={:?}, max_tokens={:?}",
+            req.temperature,
+            req.max_tokens
+        );
+    }
+
+    let binary = std::env::var("GEMINI_BINARY").unwrap_or_else(|_| "gemini".to_string());
+
     if req.stream {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(100);
-        let state_clone = state.clone();
+        let binary_clone = binary.clone();
 
         tokio::spawn(async move {
             let created_time = std::time::SystemTime::now()
@@ -156,7 +170,7 @@ async fn handle_chat_completions(
                 .as_secs();
 
             if let Err(e) = stream_prompt(
-                &state_clone,
+                &binary_clone,
                 &req.model,
                 &req.messages,
                 tx.clone(),
@@ -177,8 +191,7 @@ async fn handle_chat_completions(
             .keep_alive(KeepAlive::default())
             .into_response()
     } else {
-        let state_clone = state.clone();
-        match collect_prompt(&state_clone, &req.model, &req.messages).await {
+        match collect_prompt(&binary, &req.model, &req.messages).await {
             Ok(full_text) => {
                 let created_time = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -262,5 +275,64 @@ mod tests {
     async fn test_handle_models() {
         let response = handle_models().await.into_response();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_handle_chat_completions_tools_rejection() {
+        let req = OpenAIRequest {
+            model: "gemini-3-flash".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+            }],
+            stream: false,
+            temperature: None,
+            max_tokens: None,
+            tools: Some(serde_json::json!([
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "get_current_weather",
+                        "description": "Get the current weather",
+                    }
+                }
+            ])),
+        };
+
+        let response = handle_chat_completions(Json(req)).await;
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
+    }
+
+
+
+    #[tokio::test]
+    async fn test_collect_prompt_with_mock_binary() {
+        let messages = vec![ChatMessage {
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+        }];
+        let result = collect_prompt("echo", "gemini-3-flash", &messages).await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "");
+    }
+
+    #[tokio::test]
+    async fn test_handle_chat_completions_tools_non_array_rejection() {
+        let req = OpenAIRequest {
+            model: "gemini-3-flash".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+            }],
+            stream: false,
+            temperature: None,
+            max_tokens: None,
+            tools: Some(serde_json::json!({
+                "type": "code_interpreter"
+            })),
+        };
+
+        let response = handle_chat_completions(Json(req)).await;
+        assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
     }
 }

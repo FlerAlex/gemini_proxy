@@ -1,17 +1,12 @@
 use axum::response::sse::Event;
 use std::convert::Infallible;
 use std::process::Stdio;
-use std::sync::Arc;
 use std::time::Instant;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::Mutex;
 
 use crate::models::{self, ChatResponseChunk, ChoiceDelta, ChunkChoice};
-
-// Keep structural compatibility with main.rs state definitions
-pub struct GeminiEngine;
 
 pub fn combine_messages(messages: &[models::ChatMessage]) -> String {
     let mut prompt = String::new();
@@ -51,13 +46,12 @@ pub fn parse_stream_json_line(line: &str) -> Option<String> {
     None
 }
 
-pub async fn stream_prompt(
-    _state: &Arc<Mutex<Option<GeminiEngine>>>,
+/// Spawns the underlying gemini-cli subprocess.
+pub fn spawn_gemini(
+    binary: &str,
     model: &str,
     messages: &[models::ChatMessage],
-    tx: Sender<Result<Event, Infallible>>,
-    created_time: u64,
-) -> Result<(), String> {
+) -> Result<(tokio::process::Child, String, Instant), String> {
     let combined_prompt = combine_messages(messages);
     let project_id =
         std::env::var("GOOGLE_CLOUD_PROJECT").unwrap_or_else(|_| "default".to_string());
@@ -75,10 +69,9 @@ pub async fn stream_prompt(
     );
 
     let start_time = Instant::now();
-
     let temp_dir_str = temp_dir.to_string_lossy().to_string();
 
-    let mut child = Command::new("gemini")
+    let child = Command::new(binary)
         .arg("--skip-trust")
         .arg("-m")
         .arg(target_model)
@@ -103,6 +96,18 @@ pub async fn stream_prompt(
         spawn_duration.as_millis()
     );
 
+    Ok((child, target_model.to_string(), start_time))
+}
+
+pub async fn stream_prompt(
+    binary: &str,
+    model: &str,
+    messages: &[models::ChatMessage],
+    tx: Sender<Result<Event, Infallible>>,
+    created_time: u64,
+) -> Result<(), String> {
+    let (mut child, target_model, start_time) = spawn_gemini(binary, model, messages)?;
+
     let stdout = child
         .stdout
         .take()
@@ -111,7 +116,7 @@ pub async fn stream_prompt(
     let mut line_buf = String::new();
 
     let mut first_token_time = None;
-    let mut token_count = 0;
+    let mut chunk_count = 0;
 
     loop {
         line_buf.clear();
@@ -127,13 +132,13 @@ pub async fn stream_prompt(
                             first_token_time.unwrap().as_millis()
                         );
                     }
-                    token_count += 1;
+                    chunk_count += 1;
 
                     let chunk = ChatResponseChunk {
                         id: "chatcmpl-gemini".to_string(),
                         object: "chat.completion.chunk".to_string(),
                         created: created_time,
-                        model: target_model.to_string(),
+                        model: target_model.clone(),
                         choices: vec![ChunkChoice {
                             index: 0,
                             delta: ChoiceDelta {
@@ -159,72 +164,29 @@ pub async fn stream_prompt(
 
     let _ = child.wait().await;
     let total_duration = start_time.elapsed();
-    let tokens_per_sec = if total_duration.as_secs_f32() > 0.0 {
-        token_count as f32 / total_duration.as_secs_f32()
+    let chunks_per_sec = if total_duration.as_secs_f32() > 0.0 {
+        chunk_count as f32 / total_duration.as_secs_f32()
     } else {
         0.0
     };
 
     tracing::info!(
-        "[Profile] Stream completed for {}: total_duration={}ms, tokens_generated={}, generation_speed={:.2} tokens/sec",
+        "[Profile] Stream completed for {}: total_duration={}ms, chunks_generated={}, generation_speed={:.2} chunks/sec",
         target_model,
         total_duration.as_millis(),
-        token_count,
-        tokens_per_sec
+        chunk_count,
+        chunks_per_sec
     );
 
     Ok(())
 }
 
 pub async fn collect_prompt(
-    _state: &Arc<Mutex<Option<GeminiEngine>>>,
+    binary: &str,
     model: &str,
     messages: &[models::ChatMessage],
 ) -> Result<String, String> {
-    let combined_prompt = combine_messages(messages);
-    let project_id =
-        std::env::var("GOOGLE_CLOUD_PROJECT").unwrap_or_else(|_| "default".to_string());
-
-    let target_model = match model {
-        "gemini-cli" | "default" | "" => "gemini-3-flash",
-        other => other,
-    };
-
-    let temp_dir = std::env::temp_dir();
-    tracing::info!(
-        "Spawning stateless isolated gemini-cli for model {} inside {:?}",
-        target_model,
-        temp_dir
-    );
-
-    let start_time = Instant::now();
-
-    let temp_dir_str = temp_dir.to_string_lossy().to_string();
-
-    let mut child = Command::new("gemini")
-        .arg("--skip-trust")
-        .arg("-m")
-        .arg(target_model)
-        .arg("-p")
-        .arg(combined_prompt)
-        .arg("--output-format")
-        .arg("stream-json")
-        .env("GOOGLE_CLOUD_PROJECT", project_id)
-        .env("GEMINI_CLI_TRUST_WORKSPACE", "true")
-        .env("PWD", &temp_dir_str)
-        .env("INIT_CWD", &temp_dir_str)
-        .current_dir(temp_dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn gemini subprocess: {}", e))?;
-
-    let spawn_duration = start_time.elapsed();
-    tracing::info!(
-        "[Profile] gemini-cli subprocess spawned in {}ms",
-        spawn_duration.as_millis()
-    );
+    let (mut child, target_model, start_time) = spawn_gemini(binary, model, messages)?;
 
     let stdout = child
         .stdout
@@ -233,7 +195,7 @@ pub async fn collect_prompt(
     let mut reader = BufReader::new(stdout);
     let mut line_buf = String::new();
     let mut full_text = String::new();
-    let mut token_count = 0;
+    let mut chunk_count = 0;
 
     loop {
         line_buf.clear();
@@ -242,7 +204,7 @@ pub async fn collect_prompt(
             Ok(_) => {
                 if let Some(text) = parse_stream_json_line(&line_buf) {
                     full_text.push_str(&text);
-                    token_count += 1;
+                    chunk_count += 1;
                 }
             }
             Err(e) => {
@@ -253,18 +215,18 @@ pub async fn collect_prompt(
 
     let _ = child.wait().await;
     let total_duration = start_time.elapsed();
-    let tokens_per_sec = if total_duration.as_secs_f32() > 0.0 {
-        token_count as f32 / total_duration.as_secs_f32()
+    let chunks_per_sec = if total_duration.as_secs_f32() > 0.0 {
+        chunk_count as f32 / total_duration.as_secs_f32()
     } else {
         0.0
     };
 
     tracing::info!(
-        "[Profile] Collection completed for {}: total_duration={}ms, tokens_generated={}, generation_speed={:.2} tokens/sec",
+        "[Profile] Collection completed for {}: total_duration={}ms, chunks_generated={}, generation_speed={:.2} chunks/sec",
         target_model,
         total_duration.as_millis(),
-        token_count,
-        tokens_per_sec
+        chunk_count,
+        chunks_per_sec
     );
 
     Ok(full_text)

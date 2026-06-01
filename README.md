@@ -115,6 +115,7 @@ If you use Emacs, you can configure `gptel` to use this local proxy as a custom 
   :config
   (gptel-make-openai "GeminiProxy"
     :host "127.0.0.1:8765"
+    :protocol "http"
     :key "sk-dummy"
     :stream t
     :models '(gemini-cli

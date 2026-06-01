@@ -14,6 +14,7 @@ pub struct OpenAIRequest {
     pub stream: bool,
     pub temperature: Option<f32>,
     pub max_tokens: Option<usize>,
+    pub tools: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
