@@ -1,5 +1,20 @@
 # gemini-cli-openai-proxy
 
+<p align="center">
+  <a href="https://github.com/FlerAlex/gemini_proxy/actions">
+    <img src="https://github.com/FlerAlex/gemini_proxy/actions/workflows/release.yml/badge.svg" alt="Release Status" />
+  </a>
+  <a href="https://crates.io/crates/gemini_proxy">
+    <img src="https://img.shields.io/crates/v/gemini_proxy.svg" alt="Crates.io" />
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License" />
+  </a>
+  <a href="#">
+    <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg" alt="Platform" />
+  </a>
+</p>
+
 A high-performance, stateless OpenAI-compatible API gateway proxy for Google's official `gemini-cli`. 
 
 This proxy translates incoming `/v1/chat/completions` (streaming/non-streaming) and `/v1/models` REST payloads into isolated, headless `gemini-cli` subprocess executions and streams Server-Sent Events (SSE) directly back to any standard client (e.g., Open WebUI, VS Code Continue, Emacs gptel).
