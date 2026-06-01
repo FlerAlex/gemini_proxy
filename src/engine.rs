@@ -76,6 +76,8 @@ pub async fn stream_prompt(
 
     let start_time = Instant::now();
 
+    let temp_dir_str = temp_dir.to_string_lossy().to_string();
+
     let mut child = Command::new("gemini")
         .arg("--skip-trust")
         .arg("-m")
@@ -86,6 +88,8 @@ pub async fn stream_prompt(
         .arg("stream-json")
         .env("GOOGLE_CLOUD_PROJECT", project_id)
         .env("GEMINI_CLI_TRUST_WORKSPACE", "true")
+        .env("PWD", &temp_dir_str)
+        .env("INIT_CWD", &temp_dir_str)
         .current_dir(&temp_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -195,6 +199,8 @@ pub async fn collect_prompt(
 
     let start_time = Instant::now();
 
+    let temp_dir_str = temp_dir.to_string_lossy().to_string();
+
     let mut child = Command::new("gemini")
         .arg("--skip-trust")
         .arg("-m")
@@ -205,6 +211,8 @@ pub async fn collect_prompt(
         .arg("stream-json")
         .env("GOOGLE_CLOUD_PROJECT", project_id)
         .env("GEMINI_CLI_TRUST_WORKSPACE", "true")
+        .env("PWD", &temp_dir_str)
+        .env("INIT_CWD", &temp_dir_str)
         .current_dir(temp_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

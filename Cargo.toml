@@ -1,6 +1,6 @@
 [package]
 name = "gemini_proxy"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A high-performance, stateless OpenAI-compatible API gateway proxy for gemini-cli"
 license = "Apache-2.0"
