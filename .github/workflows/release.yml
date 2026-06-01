@@ -72,6 +72,7 @@ jobs:
             dist/gemini-proxy-macos-arm64 \
             dist/gemini-proxy-windows-amd64.exe \
             --title "${{ github.ref_name }}" \
-            --generate-notes
+            --generate-notes \
+            --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
