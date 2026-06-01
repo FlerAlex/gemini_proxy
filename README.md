@@ -1,8 +1,8 @@
 # gemini-cli-openai-proxy
 
 <p align="center">
-  <a href="https://github.com/FlerAlex/gemini_proxy/actions">
-    <img src="https://github.com/FlerAlex/gemini_proxy/actions/workflows/release.yml/badge.svg" alt="Release Status" />
+  <a href="https://github.com/FlerAlex/gemini_proxy/releases">
+    <img src="https://img.shields.io/github/v/release/FlerAlex/gemini_proxy" alt="Latest Release" />
   </a>
   <a href="https://crates.io/crates/gemini_proxy">
     <img src="https://img.shields.io/crates/v/gemini_proxy.svg" alt="Crates.io" />
