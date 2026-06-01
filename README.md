@@ -203,7 +203,7 @@ To ensure these logs never fill up your filesystem, you can register them with m
 
 ## Acknowledgments & Credits
 
-This project was inspired by the original Node.js implementation: [Intelligent-Internet/gemini-cli-openai-proxy](https://github.com/Intelligent-Internet/gemini-cli-openai-proxy). Our Rust rewrite focuses on minimizing resource consumption, adding security-isolated sandboxing, providing native parallelization, and enabling high-resolution terminal performance profiling.
+This project was inspired by the original Node.js implementation: [Intelligent-Internet/gemini-cli-mcp-openai-bridge](https://github.com/Intelligent-Internet/gemini-cli-mcp-openai-bridge). Our Rust rewrite focuses on minimizing resource consumption, adding security-isolated sandboxing, providing native parallelization, and enabling high-resolution terminal performance profiling.
 
 
 
