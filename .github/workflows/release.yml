@@ -13,16 +13,12 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact_name: gemini-proxy-linux-amd64
-            use_shell: bash
           - os: macos-latest
             artifact_name: gemini-proxy-macos-arm64
-            use_shell: bash
           - os: windows-latest
             artifact_name: gemini-proxy-windows-amd64.exe
-            use_shell: pwsh
 
     runs-on: ${{ matrix.os }}
-    shell: ${{ matrix.use_shell }}
 
     steps:
       - name: Checkout Repository
