@@ -71,6 +71,18 @@ pub fn spawn_gemini(
     let start_time = Instant::now();
     let temp_dir_str = temp_dir.to_string_lossy().to_string();
 
+    let system_md_path = temp_dir.join("gemini_proxy_system.md");
+    let system_prompt_content = "\
+You are a helpful, precise, and standard AI assistant.
+Your task is to respond to the user's prompt directly in standard text format.
+Do NOT attempt to use any tools, run any commands, or write any files.
+Provide all code, configurations, or text outputs directly within your response.
+";
+
+    if let Err(e) = std::fs::write(&system_md_path, system_prompt_content) {
+        tracing::error!("Failed to write custom system prompt to {:?}: {}", system_md_path, e);
+    }
+
     let child = Command::new(binary)
         .arg("--skip-trust")
         .arg("-m")
@@ -81,6 +93,7 @@ pub fn spawn_gemini(
         .arg("stream-json")
         .env("GOOGLE_CLOUD_PROJECT", project_id)
         .env("GEMINI_CLI_TRUST_WORKSPACE", "true")
+        .env("GEMINI_SYSTEM_MD", system_md_path.to_string_lossy().to_string())
         .env("PWD", &temp_dir_str)
         .env("INIT_CWD", &temp_dir_str)
         .current_dir(&temp_dir)

@@ -335,4 +335,24 @@ mod tests {
         let response = handle_chat_completions(Json(req)).await;
         assert_eq!(response.status(), axum::http::StatusCode::BAD_REQUEST);
     }
+
+    #[tokio::test]
+    async fn test_spawn_gemini_writes_system_md() {
+        let messages = vec![ChatMessage {
+            role: "user".to_string(),
+            content: "Hello".to_string(),
+        }];
+        let temp_dir = std::env::temp_dir();
+        let expected_path = temp_dir.join("gemini_proxy_system.md");
+        
+        if expected_path.exists() {
+            let _ = std::fs::remove_file(&expected_path);
+        }
+        
+        let _ = collect_prompt("echo", "gemini-3-flash", &messages).await;
+        
+        assert!(expected_path.exists());
+        let content = std::fs::read_to_string(&expected_path).unwrap();
+        assert!(content.contains("helpful, precise, and standard AI assistant"));
+    }
 }
