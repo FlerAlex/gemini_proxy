@@ -34,6 +34,8 @@ impl Stream for ChannelStream {
 
 #[tokio::main]
 async fn main() {
+    std::env::set_var("GEMINI_CLI_TRUST_WORKSPACE", "true");
+
     let args: Vec<String> = std::env::args().collect();
     if args.contains(&"-v".to_string()) || args.contains(&"--version".to_string()) {
         println!("gemini-cli-openai-proxy v{}", env!("CARGO_PKG_VERSION"));

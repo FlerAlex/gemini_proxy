@@ -84,7 +84,6 @@ Provide all code, configurations, or text outputs directly within your response.
     }
 
     let child = Command::new(binary)
-        .arg("--skip-trust")
         .arg("-m")
         .arg(target_model)
         .arg("-p")
